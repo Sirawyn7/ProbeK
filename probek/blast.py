@@ -6,9 +6,11 @@ import re
 import shutil
 import subprocess
 import tarfile
+import time
 from pathlib import Path
 
 import requests
+from tqdm import tqdm
 
 from . import download_utils
 from .exceptions import MissingToolError
@@ -218,7 +220,17 @@ def run_blastn(fasta_path: Path, db_path: Path, out_path: Path) -> Path:
         "-out",
         str(out_path),
     ]
-    subprocess.run(cmd, check=True)
+    # blastn itself reports no incremental progress (no percentage, no
+    # per-query status), so this is an elapsed-time heartbeat rather than a
+    # real progress bar -- its purpose is purely to show the search is
+    # actively running rather than hung, not to estimate completion.
+    with tqdm(desc="Running BLAST search", bar_format="{desc}: {elapsed} elapsed") as bar:
+        proc = subprocess.Popen(cmd)
+        while proc.poll() is None:
+            time.sleep(0.5)
+            bar.refresh()
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, cmd)
     return out_path
 
 

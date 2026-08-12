@@ -22,3 +22,8 @@ probek_cache.sqlite3
 # User-dropped probe data — working files, not meant for version control
 input_csvs/*.csv
 !input_csvs/README.md
+
+# Windows "Mark of the Web" sidecar files -- appear when a downloaded ZIP is
+# extracted through Windows Explorer into a WSL folder (NTFS Alternate Data
+# Streams get materialized as real files since ext4 has no ADS support)
+*Zone.Identifier*

@@ -19,7 +19,7 @@ candidates accordingly.
 ## What it does
 
 1. **Load & pre-filter** — reads all eFISHent CSVs in the input directory, drops rows already flagged `FAIL`, and deduplicates identical probe sequences across files/targets.
-2. **BLAST** — runs `blastn -task blastn-short` for every unique sequence against a local copy of NCBI's `human_genome` database, batched into one call.
+2. **BLAST** — runs `blastn -task blastn-short` for every unique sequence against a local copy of NCBI's `human_genome` database, batched into one call. Shows a live elapsed-time indicator while it runs — blastn itself reports no percentage, so this is "still working, Xs elapsed" rather than a true progress bar.
 3. **Filter** — discards alignments below a configurable identity/coverage floor (default ≥90%/≥90%).
 4. **Classify** — for each surviving hit, checks interval overlap against RepeatMasker ERVK loci, then exons, then falls back to intron/non-genic:
    - **Tier A** — HERV-K family locus (counts *in favor* of the probe)
