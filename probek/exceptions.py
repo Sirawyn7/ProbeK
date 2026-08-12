@@ -12,3 +12,7 @@ class ReferenceDataMissingError(ProbekError):
 
 class InputDataError(ProbekError):
     pass
+
+
+class DownloadError(ProbekError):
+    pass

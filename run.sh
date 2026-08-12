@@ -39,8 +39,8 @@ if [ ! -x "$PROBEK_BIN" ]; then
     echo
     echo "ProbeK needs to set up a local Python environment before it can run."
     echo "This creates '$VENV_DIR/' in this folder and installs a few Python"
-    echo "packages into it (pandas, numpy, requests, pyarrow) -- nothing is"
-    echo "installed system-wide."
+    echo "packages into it (pandas, numpy, requests, pyarrow, tqdm) -- nothing"
+    echo "is installed system-wide."
     read -r -p "Proceed? [y/N]: " reply
     case "$reply" in
         [yY]|[yY][eE][sS]) ;;
@@ -64,8 +64,8 @@ if [ ! -x "$PROBEK_BIN" ]; then
     fi
 
     echo "Installing ProbeK and its dependencies..."
-    "$VENV_DIR/bin/python" -m pip install --upgrade pip -q
-    "$VENV_DIR/bin/python" -m pip install -e . -q
+    "$VENV_DIR/bin/python" -m pip install --upgrade pip
+    "$VENV_DIR/bin/python" -m pip install -e .
     echo "Setup complete."
     echo
 fi

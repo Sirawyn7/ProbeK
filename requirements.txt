@@ -2,6 +2,7 @@ pandas>=2.0
 numpy>=1.24
 requests>=2.31
 pyarrow>=14
+tqdm>=4.65
 pytest>=7.4
 
 # Optional — attempted at setup time for faster interval-overlap classification.

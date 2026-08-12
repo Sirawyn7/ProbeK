@@ -10,6 +10,7 @@ from pathlib import Path
 
 import requests
 
+from . import download_utils
 from .exceptions import MissingToolError
 from .models import BlastHit
 from .prompts import prompt_yes_no
@@ -85,16 +86,6 @@ def _find_latest_linux_tarball_url() -> tuple[str, str]:
     return BLAST_RELEASE_INDEX_URL + filename, BLAST_RELEASE_INDEX_URL + filename + ".md5"
 
 
-def _verify_md5(path: Path, md5_url: str) -> None:
-    expected = requests.get(md5_url, timeout=30).text.strip().split()[0]
-    actual = hashlib.md5(path.read_bytes()).hexdigest()
-    if actual != expected:
-        raise MissingToolError(
-            f"Downloaded BLAST+ archive failed checksum verification "
-            f"(expected {expected}, got {actual}) — please try again."
-        )
-
-
 def install_blast_plus_locally(reference_dir: Path) -> Path:
     """Downloads and extracts NCBI's official prebuilt BLAST+ build for Linux
     x64 into reference_dir/tools/blast+/ — no admin/sudo privileges required.
@@ -106,14 +97,8 @@ def install_blast_plus_locally(reference_dir: Path) -> Path:
     tools_dir.mkdir(parents=True, exist_ok=True)
     tarball_path = tools_dir / "blast_plus_download.tar.gz"
 
-    print(f"Downloading {tarball_url} ...")
-    with requests.get(tarball_url, stream=True, timeout=60) as resp:
-        resp.raise_for_status()
-        with open(tarball_path, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=1 << 20):
-                f.write(chunk)
-
-    _verify_md5(tarball_path, md5_url)
+    download_utils.download_with_progress(tarball_url, tarball_path, desc="BLAST+ tools")
+    download_utils.verify_md5(tarball_path, md5_url)
 
     with tarfile.open(tarball_path) as tar:
         try:

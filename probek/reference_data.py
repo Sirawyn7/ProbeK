@@ -12,12 +12,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import subprocess
+import tarfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 
+from . import download_utils
 from .config import GenomeBuild
 from .exceptions import ReferenceDataMissingError
 from .prompts import prompt_yes_no
@@ -105,35 +106,72 @@ def assembly_report_present(reference_dir: Path, build: GenomeBuild) -> bool:
     return assembly_report_path(reference_dir, build).exists()
 
 
-def _download_file(url: str, dest: Path) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with requests.get(url, stream=True, timeout=60) as resp:
-        resp.raise_for_status()
-        with open(dest, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=1 << 20):
-                f.write(chunk)
+def _blastdb_metadata_url(build: GenomeBuild) -> str:
+    return f"https://ftp.ncbi.nlm.nih.gov/blast/db/{build.blast_db_name}-nucl-metadata.json"
+
+
+def parse_blastdb_metadata(metadata: dict) -> tuple[list[tuple[str, str]], int]:
+    """Given NCBI's per-database metadata JSON (the same file update_blastdb.pl
+    itself reads to discover volumes), returns a list of (https_url, filename)
+    for each volume tarball — sorted by filename, since the metadata's own
+    file order isn't guaranteed — and the exact total compressed byte size
+    across all of them."""
+    volumes = []
+    for file_url in metadata["files"]:
+        https_url = file_url.replace("ftp://", "https://", 1)
+        filename = https_url.rsplit("/", 1)[-1]
+        volumes.append((https_url, filename))
+    volumes.sort(key=lambda v: v[1])
+    return volumes, int(metadata["bytes-total-compressed"])
 
 
 def download_blastdb(reference_dir: Path, build: GenomeBuild) -> None:
+    """Downloads NCBI's preformatted BLAST database directly rather than
+    shelling out to update_blastdb.pl — the same official, checksummed files,
+    just fetched ourselves so real progress can be shown against the exact
+    expected size published in NCBI's own per-database metadata JSON (the
+    same file update_blastdb.pl reads internally to discover volumes)."""
     d = blastdb_dir(reference_dir)
     d.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["update_blastdb.pl", build.blast_db_name, "--decompress"],
-        cwd=d,
-        check=True,
+
+    metadata = requests.get(_blastdb_metadata_url(build), timeout=30).json()
+    volumes, total_bytes = parse_blastdb_metadata(metadata)
+
+    download_targets = [(url, d / filename) for url, filename in volumes]
+    download_utils.download_volumes_with_progress(
+        download_targets, total_bytes, desc=f"{build.blast_db_name} BLAST database"
     )
+
+    for url, path in download_targets:
+        download_utils.verify_md5(path, url + ".md5")
+
+    for _, path in download_targets:
+        with tarfile.open(path) as tar:
+            try:
+                tar.extractall(d, filter="data")
+            except TypeError:
+                tar.extractall(d)  # Python <3.12 without the `filter` argument
+        path.unlink()
 
 
 def download_annotation(reference_dir: Path, build: GenomeBuild) -> None:
-    _download_file(build.gff_url, gff_path(reference_dir, build))
+    download_utils.download_with_progress(
+        build.gff_url, gff_path(reference_dir, build), desc="RefSeq gene annotation (GFF3)"
+    )
 
 
 def download_rmsk(reference_dir: Path, build: GenomeBuild) -> None:
-    _download_file(build.rmsk_url, rmsk_path(reference_dir))
+    download_utils.download_with_progress(
+        build.rmsk_url, rmsk_path(reference_dir), desc="UCSC RepeatMasker track"
+    )
 
 
 def download_assembly_report(reference_dir: Path, build: GenomeBuild) -> None:
-    _download_file(build.assembly_report_url, assembly_report_path(reference_dir, build))
+    download_utils.download_with_progress(
+        build.assembly_report_url,
+        assembly_report_path(reference_dir, build),
+        desc="NCBI assembly report",
+    )
 
 
 def check_reference_data(

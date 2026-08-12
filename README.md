@@ -52,7 +52,7 @@ That's it. The first time you run it, ProbeK sets itself up step by step,
 asking before it does anything (nothing happens silently):
 
 1. **Local Python environment** — `run.sh` creates a `.venv/` folder here and installs ProbeK's Python dependencies into it. Nothing is installed system-wide.
-2. **BLAST+ command-line tools** — if not already on your system, ProbeK offers to download NCBI's official prebuilt Linux build straight into this project's `reference_data/tools/` folder. No `sudo`/admin access needed.
+2. **BLAST+ command-line tools** — if not already on your system, ProbeK offers to download NCBI's official prebuilt Linux build straight into this project's `reference_data/tools/` folder, with a live progress bar. No `sudo`/admin access needed.
 3. **Reference data** (~1 GB+) — NCBI's genome BLAST database (GRCh38; note
    this tracks whatever patch level NCBI currently ships under the
    `human_genome` name, which as of writing is GRCh38.p13/GCF_000001405.39 —
@@ -61,9 +61,12 @@ asking before it does anything (nothing happens silently):
    the matching RefSeq gene annotation (pinned to GRCh38.p14/GCF_000001405.40),
    and the UCSC RepeatMasker track used to identify HERV-K loci.
 
-Every run after the first skips straight to processing your CSVs — only
-missing pieces trigger a prompt. If `input_csvs/` is empty, ProbeK just
-prints a reminder of where to put your files and exits cleanly.
+Every download — including the ~1 GB genome database — shows a live progress
+bar tracking bytes downloaded against the exact expected total, so you can
+always tell it's actually working rather than hung. Every run after the
+first skips straight to processing your CSVs — only missing pieces trigger a
+prompt. If `input_csvs/` is empty, ProbeK just prints a reminder of where to
+put your files and exits cleanly.
 
 Pass flags the same way: `bash run.sh --top-n 15`.
 
