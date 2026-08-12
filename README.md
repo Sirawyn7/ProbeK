@@ -40,11 +40,13 @@ candidates accordingly.
 2. Drop your eFISHent-format CSVs into [`input_csvs/`](input_csvs/) (see that directory's README for the expected format and how target labels are derived).
 3. Run:
    ```bash
-   ./run.sh
+   bash run.sh
    ```
-   (If you get "Permission denied" — this can happen if the folder was
-   downloaded as a ZIP rather than `git clone`d — run `chmod +x run.sh` once
-   and try again.)
+   (`bash run.sh` always works. `./run.sh` also works, but only if the file's
+   executable bit survived getting onto your machine — GitHub's "Download
+   ZIP" button, for one, does not preserve it, which shows up as
+   `Permission denied`. If you'd rather use `./run.sh`, fix that once with
+   `chmod +x run.sh`.)
 
 That's it. The first time you run it, ProbeK sets itself up step by step,
 asking before it does anything (nothing happens silently):
@@ -63,7 +65,7 @@ Every run after the first skips straight to processing your CSVs — only
 missing pieces trigger a prompt. If `input_csvs/` is empty, ProbeK just
 prints a reminder of where to put your files and exits cleanly.
 
-Pass flags the same way: `./run.sh --top-n 15`.
+Pass flags the same way: `bash run.sh --top-n 15`.
 
 ### Flags
 
