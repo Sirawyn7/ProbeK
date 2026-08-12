@@ -1,11 +1,25 @@
-from probek.blast import filter_hits, parse_outfmt6
+from probek.blast import _normalize_sseqid, filter_hits, parse_outfmt6
 
 
 def test_parse_outfmt6_groups_by_query(fixtures_dir):
     hits = parse_outfmt6(fixtures_dir / "sample_blast_outfmt6.tsv")
     assert set(hits.keys()) == {"SEQAAA", "SEQBBB"}
     assert len(hits["SEQAAA"]) == 3
-    assert len(hits["SEQBBB"]) == 1
+    assert len(hits["SEQBBB"]) == 2
+
+
+def test_normalize_sseqid_strips_ncbi_defline_wrapper():
+    assert _normalize_sseqid("gi|1234567|ref|NW_009646194.1|") == "NW_009646194.1"
+
+
+def test_normalize_sseqid_passes_through_bare_accession():
+    assert _normalize_sseqid("NC_000001.11") == "NC_000001.11"
+
+
+def test_parse_outfmt6_normalizes_ncbi_defline_sseqid(fixtures_dir):
+    hits = parse_outfmt6(fixtures_dir / "sample_blast_outfmt6.tsv")
+    defline_hit = hits["SEQBBB"][1]
+    assert defline_hit.sseqid == "NW_009646194.1"
 
 
 def test_coverage_computation(fixtures_dir):

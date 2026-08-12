@@ -84,11 +84,12 @@ def run(config: AppConfig) -> int:
         logger.info("BLASTing %d unique new sequence(s)...", len(to_blast))
         work_dir = output_dir / "_work"
         work_dir.mkdir(parents=True, exist_ok=True)
-        fasta_path = blast.write_batch_fasta(to_blast, work_dir / "batch_query.fasta")
+        fasta_path, id_to_sequence = blast.write_batch_fasta(to_blast, work_dir / "batch_query.fasta")
         raw_out = blast.run_blastn(
             fasta_path, reference_data.blastdb_path(reference_dir, build), work_dir / "batch_hits.tsv"
         )
-        new_hits = blast.parse_outfmt6(raw_out)
+        hits_by_id = blast.parse_outfmt6(raw_out)
+        new_hits = {id_to_sequence[seq_id]: hits for seq_id, hits in hits_by_id.items()}
         blastn_version = blast.blastn_version()
         for seq in to_blast:
             hits = new_hits.get(seq, [])

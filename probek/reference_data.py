@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,8 +46,31 @@ def blastdb_dir(reference_dir: Path) -> Path:
     return Path(reference_dir) / "blastdb"
 
 
+def _discover_blastdb_basename(d: Path) -> str | None:
+    """update_blastdb.pl's target name (e.g. "human_genome") is just the
+    identifier you ask it to fetch — the files it actually writes are named
+    after the underlying assembly (e.g. "GCF_000001405.39_top_level.*"), so
+    the real queryable -db basename has to be discovered on disk rather than
+    assumed to match the identifier we asked for."""
+    if not d.exists():
+        return None
+    nal_files = sorted(d.glob("*.nal"))
+    if nal_files:
+        return nal_files[0].stem
+    # Single-volume db has no .nal alias; a multi-volume one's .NN.nin files
+    # would falsely match here too, so exclude those.
+    nin_files = sorted(f for f in d.glob("*.nin") if not re.search(r"\.\d+\.nin$", f.name))
+    if nin_files:
+        return nin_files[0].stem
+    return None
+
+
 def blastdb_path(reference_dir: Path, build: GenomeBuild) -> Path:
-    return blastdb_dir(reference_dir) / build.blast_db_name
+    d = blastdb_dir(reference_dir)
+    basename = _discover_blastdb_basename(d)
+    if basename is None:
+        raise ReferenceDataMissingError(f"No usable BLAST database found in {d}.")
+    return d / basename
 
 
 def gff_path(reference_dir: Path, build: GenomeBuild) -> Path:
@@ -66,17 +90,14 @@ def assembly_report_path(reference_dir: Path, build: GenomeBuild) -> Path:
 
 
 def blastdb_present(reference_dir: Path, build: GenomeBuild) -> bool:
-    d = blastdb_dir(reference_dir)
-    if not d.exists():
-        return False
-    return any(d.glob(f"{build.blast_db_name}*.n*"))
+    return _discover_blastdb_basename(blastdb_dir(reference_dir)) is not None
 
 
 def annotation_present(reference_dir: Path, build: GenomeBuild) -> bool:
     return gff_path(reference_dir, build).exists()
 
 
-def rmsk_present(reference_dir: Path) -> bool:
+def rmsk_present(reference_dir: Path, build: GenomeBuild) -> bool:
     return rmsk_path(reference_dir).exists()
 
 

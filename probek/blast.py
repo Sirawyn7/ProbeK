@@ -64,7 +64,11 @@ def _tools_present_in(bin_dir: Path) -> bool:
 
 
 def _prepend_to_path(bin_dir: Path) -> None:
-    os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+    # Must be absolute: some subprocess calls elsewhere (e.g. update_blastdb.pl,
+    # invoked with cwd=reference_data/blastdb/) run with a different working
+    # directory, and a relative PATH entry would resolve against *that* cwd
+    # instead of the project root, making the tool unfindable.
+    os.environ["PATH"] = str(Path(bin_dir).resolve()) + os.pathsep + os.environ.get("PATH", "")
 
 
 def _find_latest_linux_tarball_url() -> tuple[str, str]:
@@ -189,12 +193,24 @@ def blastn_version() -> str:
     return out.stdout.strip().splitlines()[0]
 
 
-def write_batch_fasta(sequences: list[str], path: Path) -> Path:
+def _fasta_id_for_sequence(seq: str) -> str:
+    return "seq_" + hashlib.md5(seq.encode("utf-8")).hexdigest()[:16]
+
+
+def write_batch_fasta(sequences: list[str], path: Path) -> tuple[Path, dict[str, str]]:
+    """Writes a multi-FASTA of `sequences`, each under a short synthetic ID
+    rather than the raw sequence itself — using the sequence as its own FASTA
+    header trips blastn's "sequence in title line?" sanity-check warning on
+    every single query. Returns (fasta_path, id_to_sequence) so callers can
+    map blastn's qseqid output back to the original sequence."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    id_to_sequence: dict[str, str] = {}
     with open(path, "w", encoding="utf-8") as f:
         for seq in sequences:
-            f.write(f">{seq}\n{seq}\n")  # sequence itself is the cache key -> use as FASTA id
-    return path
+            seq_id = _fasta_id_for_sequence(seq)
+            id_to_sequence[seq_id] = seq
+            f.write(f">{seq_id}\n{seq}\n")
+    return path, id_to_sequence
 
 
 def run_blastn(fasta_path: Path, db_path: Path, out_path: Path) -> Path:
@@ -221,6 +237,21 @@ def run_blastn(fasta_path: Path, db_path: Path, out_path: Path) -> Path:
     return out_path
 
 
+_SSEQID_REF_RE = re.compile(r"\|ref\|([^|]+)\|?")
+
+
+def _normalize_sseqid(raw: str) -> str:
+    """BLAST's outfmt 6 `sseqid` is either a bare accession (e.g.
+    "NC_000001.11") or, for databases built with NCBI's older-style deflines
+    (as the `human_genome` preformatted db currently is), the full pipe-
+    delimited form "gi|1234|ref|NC_000001.11|". Everything downstream
+    (GFF3 seqid, rmsk genoName translated via chrom_map, assembly report)
+    is keyed on the bare accession, so it must be extracted here — otherwise
+    every hit silently fails to match any annotation/ERVK interval."""
+    match = _SSEQID_REF_RE.search(raw)
+    return match.group(1) if match else raw
+
+
 def parse_outfmt6(path: Path) -> dict[str, list[BlastHit]]:
     """Parse -outfmt 6 tabular output into hits grouped by query sequence (qseqid)."""
     hits_by_seq: dict[str, list[BlastHit]] = {}
@@ -232,7 +263,7 @@ def parse_outfmt6(path: Path) -> dict[str, list[BlastHit]]:
             fields = line.split("\t")
             row = dict(zip(OUTFMT_FIELDS, fields))
             hit = BlastHit(
-                sseqid=row["sseqid"],
+                sseqid=_normalize_sseqid(row["sseqid"]),
                 pident=float(row["pident"]),
                 length=int(row["length"]),
                 qstart=int(row["qstart"]),
