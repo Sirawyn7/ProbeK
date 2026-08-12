@@ -31,59 +31,39 @@ candidates accordingly.
 ## Requirements
 
 - WSL2 (Ubuntu) or native Linux.
-- Python 3.10+.
+- Python 3.10+ installed and on `PATH` (everything else — BLAST+, Python packages, reference data — ProbeK sets up for you).
 - No NCBI account, API key, or Entrez email needed — BLAST runs entirely locally.
 
-You do **not** need to install BLAST+ yourself — see below.
+## Quick start
 
-## Setup
+1. Extract or clone this folder anywhere.
+2. Drop your eFISHent-format CSVs into [`input_csvs/`](input_csvs/) (see that directory's README for the expected format and how target labels are derived).
+3. Run:
+   ```bash
+   ./run.sh
+   ```
+   (If you get "Permission denied" — this can happen if the folder was
+   downloaded as a ZIP rather than `git clone`d — run `chmod +x run.sh` once
+   and try again.)
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
-# optional, for faster interval-overlap classification — ProbeK falls back to
-# a built-in pandas/numpy implementation automatically if this isn't available
-# on your system:
-pip install -e .[pyranges]    # or: pip install -e .[pyranges1]
-```
+That's it. The first time you run it, ProbeK sets itself up step by step,
+asking before it does anything (nothing happens silently):
 
-On first run, ProbeK checks for everything else it needs and offers to set it
-up for you, prompting (y/n) before downloading anything — nothing happens
-silently:
+1. **Local Python environment** — `run.sh` creates a `.venv/` folder here and installs ProbeK's Python dependencies into it. Nothing is installed system-wide.
+2. **BLAST+ command-line tools** — if not already on your system, ProbeK offers to download NCBI's official prebuilt Linux build straight into this project's `reference_data/tools/` folder. No `sudo`/admin access needed.
+3. **Reference data** (~1 GB+) — NCBI's genome BLAST database (GRCh38; note
+   this tracks whatever patch level NCBI currently ships under the
+   `human_genome` name, which as of writing is GRCh38.p13/GCF_000001405.39 —
+   this doesn't affect correctness, since patch releases only add
+   alternate/patch scaffolds and never move primary chromosome coordinates),
+   the matching RefSeq gene annotation (pinned to GRCh38.p14/GCF_000001405.40),
+   and the UCSC RepeatMasker track used to identify HERV-K loci.
 
-1. **BLAST+ command-line tools** (`blastn`, `makeblastdb`, `update_blastdb.pl`).
-   If these aren't already on your system, ProbeK offers to download NCBI's
-   official prebuilt Linux build straight into the project's
-   `reference_data/tools/` folder — no `sudo`/admin access or package manager
-   needed. (If you'd rather install it system-wide yourself:
-   `sudo apt install ncbi-blast+`, or `conda install -c bioconda blast`.)
-2. **NCBI's preformatted `human_genome` BLAST database** (~1 GB, GRCh38). Note:
-   this is NCBI's own rolling alias for "the current human genome build," so
-   its exact patch level can lag behind the GRCh38.p14 (GCF_000001405.40)
-   pinned for the annotation below — as of writing it resolves to GRCh38.p13
-   (GCF_000001405.39). This doesn't affect correctness: patch releases only
-   add alternate/patch scaffolds and never move primary chromosome (chr1-22,
-   X, Y, MT) coordinates, which is what classification actually relies on.
-3. **The matching RefSeq gene annotation** (GFF3, pinned to GRCh38.p14 / GCF_000001405.40).
-4. **The UCSC RepeatMasker track**, filtered to the ERVK family, plus the NCBI
-   assembly report used to reconcile RefSeq/UCSC chromosome naming.
+Every run after the first skips straight to processing your CSVs — only
+missing pieces trigger a prompt. If `input_csvs/` is empty, ProbeK just
+prints a reminder of where to put your files and exits cleanly.
 
-Use `--non-interactive` in scripted/CI contexts — it fails with the exact
-manual setup command instead of prompting.
-
-## Usage
-
-Drop your eFISHent-format CSVs into [`input_csvs/`](input_csvs/) (see that
-directory's README for the expected format and how target labels are
-derived), then:
-
-```bash
-probek --input input_csvs/
-```
-
-If `input_csvs/` is empty, ProbeK prints a reminder of where to put your
-files and exits cleanly.
+Pass flags the same way: `./run.sh --top-n 15`.
 
 ### Flags
 
@@ -96,7 +76,7 @@ files and exits cleanly.
 | `--min-coverage` | `90` | Minimum % query coverage for a genuine BLAST hit |
 | `--reference-dir` | `./reference_data/` | Reference data location |
 | `--build` | `GRCh38` | Genome build |
-| `--non-interactive` | off | Never prompt; fail clearly if reference data is missing |
+| `--non-interactive` | off | Never prompt; fail clearly if reference data (or the local Python environment) is missing |
 | `--force-reblast` | off | Bypass the sequence cache |
 | `--verbose` | off | Verbose logging |
 
@@ -113,7 +93,32 @@ results/
     └── all_targets.fasta    # selected sequences, combined
 ```
 
-## Development
+<details>
+<summary><strong>Manual setup (for development, or if you'd rather manage the Python environment yourself)</strong></summary>
+
+`run.sh` is just a convenience wrapper. You can set up and run ProbeK by hand instead:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+# optional, for faster interval-overlap classification — ProbeK falls back to
+# a built-in pandas/numpy implementation automatically if this isn't available
+# on your system:
+pip install -e .[pyranges]    # or: pip install -e .[pyranges1]
+```
+
+Then run `probek` directly (it takes the same flags as `./run.sh`):
+
+```bash
+probek --input input_csvs/
+```
+
+Use `--non-interactive` in scripted/CI contexts — it fails with the exact
+manual setup command instead of prompting, for both this Python environment
+step and ProbeK's own BLAST+/reference-data setup.
+
+### Development
 
 ```bash
 pytest
@@ -125,3 +130,5 @@ downloads. To force a specific interval-overlap backend when testing:
 ```bash
 PROBEK_INTERVAL_BACKEND=custom pytest
 ```
+
+</details>
