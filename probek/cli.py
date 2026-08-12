@@ -111,7 +111,8 @@ def run(config: AppConfig) -> int:
     results = []
     for target, df in frames.items():
         result = scoring.rank_and_select(target, df, classified_by_sequence, config.top_n)
-        report.write_target_audit_csv(result, classified_by_sequence, output_dir)
+        report.enrich_target_result(result, classified_by_sequence)
+        report.write_target_audit_csv(result, output_dir)
         results.append(result)
 
     report.write_final_selection_csv(results, output_dir)

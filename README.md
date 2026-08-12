@@ -25,7 +25,7 @@ candidates accordingly.
    - **Tier A** — HERV-K family locus (counts *in favor* of the probe)
    - **Tier B** — intron or non-genic (low risk, tolerated)
    - **Tier C** — exon of an unrelated gene (real off-target risk)
-5. **Rank & select** — sorts by fewest Tier C, then most Tier A, then fewest Tier B, then eFISHent's `quality` score as a tiebreaker, and selects the top N (default 12) per target.
+5. **Rank & select** — sorts by fewest Tier C, then most Tier A, then fewest Tier B, then eFISHent's `quality` score as a tiebreaker, and selects the top N (default 12) per target. (Tier A/B/C is internal ranking vocabulary only — the actual output spells out "HERV-K family" / "exon" / "intron" / "outside any gene" in plain English; see [Output](#output).)
 6. **Output** — per-target audit CSVs, a combined final-selection table, and vendor-ready FASTA files.
 
 ## Requirements
@@ -91,12 +91,23 @@ Written to `results/` (configurable via `--output`):
 
 ```
 results/
-├── <target>_audit.csv       # every surviving candidate, full tier breakdown + rank
-├── final_selection.csv      # combined top-N selection across all targets
+├── <target>_audit.csv       # every surviving candidate, full off-target breakdown + rank
+├── final_selection.csv      # combined top-N selection across all targets (self-contained, same columns)
 └── fasta/
     ├── <target>.fasta       # selected sequences for one target
     └── all_targets.fasta    # selected sequences, combined
 ```
+
+Both CSVs carry, per candidate probe:
+
+- `hervk_family_hits` / `exon_hits` / `intron_hits` / `outside_gene_hits` — plain-English off-target counts (no "Tier A/B/C" jargon).
+- `off_target_loci` — every individual off-target hit, one per entry, as `<accession>:<start>-<end> (<feature>)`, e.g.:
+  ```
+  NC_000001.11:75379786-75379806 (HERV-K family: HERVK-int)
+  NC_000005.10:151268868-151268889 (exon of GM2A)
+  NC_000010.11:22945031-22945051 (intron of ARMC3)
+  NC_000005.10:53872812-53872833 (outside any gene)
+  ```
 
 <details>
 <summary><strong>Manual setup (for development, or if you'd rather manage the Python environment yourself)</strong></summary>
