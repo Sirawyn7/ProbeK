@@ -46,15 +46,40 @@ def feature_counts(classified: list[ClassifiedHit]) -> dict[str, int]:
     return counts
 
 
+def flagged_genes(classified: list[ClassifiedHit]) -> str:
+    """Comma-separated, de-duplicated gene symbols with a real (exon)
+    off-target hit -- the one detail worth seeing without reading the full
+    off_target_loci breakdown. Empty string if there are none."""
+    genes: list[str] = []
+    seen: set[str] = set()
+    for c in classified:
+        if c.tier == "C" and c.locus_label and c.locus_label not in seen:
+            seen.add(c.locus_label)
+            genes.append(c.locus_label)
+    return ", ".join(genes)
+
+
+def off_target_risk_label(exon_hits: int) -> str:
+    """Coarse at-a-glance risk category, driven purely by exon hits -- the
+    only off-target category that represents real cross-hybridization risk.
+    0 = Low, 1-2 = Moderate, 3+ = High."""
+    if exon_hits == 0:
+        return "Low"
+    if exon_hits <= 2:
+        return "Moderate"
+    return "High"
+
+
 def enrich_target_result(
     result: TargetResult, classified_by_sequence: dict[str, list[ClassifiedHit]]
 ) -> None:
     """Replaces each row's internal Tier A/B/C sort-key counts (used only for
     ranking, in probek.scoring's vocabulary) with plain-English off-target
-    detail: a per-locus feature+location breakdown, and separate HERV-K
-    family / exon / intron / outside-gene hit counts. Mutates `result` in
-    place so both the per-target audit CSV and the combined final-selection
-    CSV pick up the same enriched columns."""
+    detail: a per-locus feature+location breakdown, separate HERV-K family /
+    exon / intron / outside-gene hit counts, an at-a-glance risk category,
+    and the specific genes flagged for real (exon) off-target risk. Mutates
+    `result` in place so both the per-target audit CSV and the combined
+    final-selection CSV pick up the same enriched columns."""
     for row in result.ranked_rows:
         seq = str(row["sequence"]).upper()
         classified = classified_by_sequence.get(seq, [])
@@ -64,13 +89,46 @@ def enrich_target_result(
         row["exon_hits"] = counts["exon"]
         row["intron_hits"] = counts["intron"]
         row["outside_gene_hits"] = counts["outside_gene"]
+        row["off_target_risk"] = off_target_risk_label(counts["exon"])
+        row["flagged_genes"] = flagged_genes(classified)
         for internal_key in ("tier_a_count", "tier_b_count", "tier_c_count"):
             row.pop(internal_key, None)
         row["selected"] = row["name"] in result.selected_names
 
 
+# Columns worth seeing without scrolling, in the order they should appear.
+# "target" and "target_short" only exist in final_selection.csv; harmless to
+# list them here since reordering silently skips columns that aren't present.
+_PRIORITY_COLUMNS = [
+    "target",
+    "name",
+    "selected",
+    "rank",
+    "target_short",
+    "off_target_risk",
+    "flagged_genes",
+    "hervk_family_hits",
+    "exon_hits",
+    "intron_hits",
+    "outside_gene_hits",
+    "quality",
+    "recommendation",
+    "sequence",
+]
+
+
+def _reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Puts the glanceable summary columns first and the dense, detailed
+    off_target_loci breakdown last, with everything else (the original
+    eFISHent columns) in between in their existing order."""
+    priority = [c for c in _PRIORITY_COLUMNS if c in df.columns]
+    tail = [c for c in ("off_target_loci",) if c in df.columns]
+    middle = [c for c in df.columns if c not in priority and c not in tail]
+    return df[priority + middle + tail]
+
+
 def write_target_audit_csv(result: TargetResult, output_dir: Path) -> Path:
-    df = pd.DataFrame(result.ranked_rows)
+    df = _reorder_columns(pd.DataFrame(result.ranked_rows))
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{result.target}_audit.csv"
     df.to_csv(path, index=False)
@@ -94,7 +152,7 @@ def write_final_selection_csv(results: list[TargetResult], output_dir: Path) -> 
                 len(result.selected_names),
             )
 
-    df = pd.DataFrame(rows)
+    df = _reorder_columns(pd.DataFrame(rows))
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "final_selection.csv"
     df.to_csv(path, index=False)

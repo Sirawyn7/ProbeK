@@ -1,5 +1,14 @@
+import pandas as pd
+
 from probek.models import BlastHit, ClassifiedHit, TargetResult
-from probek.report import enrich_target_result, feature_counts, format_off_target_loci
+from probek.report import (
+    _reorder_columns,
+    enrich_target_result,
+    feature_counts,
+    flagged_genes,
+    format_off_target_loci,
+    off_target_risk_label,
+)
 
 _DUMMY_HIT = BlastHit(
     sseqid="NC_000005.10", pident=100.0, length=21, qstart=1, qend=21,
@@ -83,6 +92,8 @@ def test_enrich_target_result_replaces_tier_counts_with_plain_columns():
     assert row["intron_hits"] == 0
     assert row["outside_gene_hits"] == 1
     assert row["selected"] is True
+    assert row["off_target_risk"] == "Low"
+    assert row["flagged_genes"] == ""
     assert "(HERV-K family: HERVK-int)" in row["off_target_loci"]
 
 
@@ -97,3 +108,58 @@ def test_enrich_target_result_sequence_lookup_is_case_insensitive():
     enrich_target_result(result, classified_by_sequence)
     assert result.ranked_rows[0]["exon_hits"] == 1
     assert result.ranked_rows[0]["selected"] is False
+
+
+def test_flagged_genes_deduplicates_and_ignores_non_exon_tiers():
+    classified = [
+        ClassifiedHit(hit=_DUMMY_HIT, tier="C", locus_label="GM2A"),
+        ClassifiedHit(hit=_DUMMY_HIT, tier="C", locus_label="GM2A"),  # duplicate, same gene
+        ClassifiedHit(hit=_DUMMY_HIT, tier="C", locus_label="TP53"),
+        ClassifiedHit(hit=_DUMMY_HIT, tier="A", locus_label="HERVK-int"),  # not an exon hit
+        ClassifiedHit(hit=_DUMMY_HIT, tier="B", locus_label="ARMC3"),  # intron, not exon
+    ]
+    assert flagged_genes(classified) == "GM2A, TP53"
+
+
+def test_flagged_genes_empty_when_no_exon_hits():
+    classified = [ClassifiedHit(hit=_DUMMY_HIT, tier="A", locus_label="HERVK-int")]
+    assert flagged_genes(classified) == ""
+
+
+def test_off_target_risk_label_thresholds():
+    assert off_target_risk_label(0) == "Low"
+    assert off_target_risk_label(1) == "Moderate"
+    assert off_target_risk_label(2) == "Moderate"
+    assert off_target_risk_label(3) == "High"
+    assert off_target_risk_label(10) == "High"
+
+
+def test_reorder_columns_puts_priority_columns_first_and_loci_last():
+    df = pd.DataFrame(
+        [
+            {
+                "length": 21,
+                "sequence": "ACGT",
+                "off_target_loci": "some detail",
+                "name": "p1",
+                "quality": 50.0,
+                "exon_hits": 0,
+                "selected": True,
+                "rank": 1,
+                "off_target_risk": "Low",
+            }
+        ]
+    )
+    reordered = _reorder_columns(df)
+    columns = list(reordered.columns)
+    assert columns[-1] == "off_target_loci"
+    assert columns.index("name") < columns.index("length")
+    assert columns.index("selected") < columns.index("sequence")
+    assert columns.index("off_target_risk") < columns.index("quality")
+
+
+def test_reorder_columns_handles_missing_priority_columns_gracefully():
+    # final_selection.csv-only columns ("target") absent from a plain audit df
+    df = pd.DataFrame([{"name": "p1", "off_target_loci": "x", "length": 21}])
+    reordered = _reorder_columns(df)
+    assert list(reordered.columns) == ["name", "length", "off_target_loci"]

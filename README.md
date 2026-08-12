@@ -98,16 +98,63 @@ results/
     └── all_targets.fasta    # selected sequences, combined
 ```
 
-Both CSVs carry, per candidate probe:
+Both CSVs share the same columns and column order — `final_selection.csv` is
+self-contained, so you don't need to cross-reference the per-target audit
+files to see why a probe was chosen. The glanceable columns come first; the
+original eFISHent columns and the full off-target detail trail behind. See
+[CSV column reference](#csv-column-reference) below for what every column means.
 
-- `hervk_family_hits` / `exon_hits` / `intron_hits` / `outside_gene_hits` — plain-English off-target counts (no "Tier A/B/C" jargon).
-- `off_target_loci` — every individual off-target hit, one per entry, as `<accession>:<start>-<end> (<feature>)`, e.g.:
-  ```
-  NC_000001.11:75379786-75379806 (HERV-K family: HERVK-int)
-  NC_000005.10:151268868-151268889 (exon of GM2A)
-  NC_000010.11:22945031-22945051 (intron of ARMC3)
-  NC_000005.10:53872812-53872833 (outside any gene)
-  ```
+### CSV column reference
+
+#### Columns ProbeK adds
+
+| Column | Meaning |
+|---|---|
+| `target` | Which gene target this probe belongs to (e.g. `pNRV101_gag`). Only in `final_selection.csv` — each per-target audit CSV is already just one target. |
+| `selected` | Whether this probe is one of the chosen top-N for its target. |
+| `rank` | This probe's rank within its target, 1 = best. See sort order below. |
+| `target_short` | `True` if this target had fewer than `--top-n` non-FAIL candidates to begin with (so every candidate was selected, none backfilled). Only in `final_selection.csv`. |
+| `off_target_risk` | At-a-glance category — `Low` / `Moderate` / `High` — based purely on `exon_hits`, the only off-target category that represents real cross-hybridization risk: 0 → Low, 1–2 → Moderate, 3+ → High. |
+| `flagged_genes` | Comma-separated gene symbols that had a real (exon) off-target hit, e.g. `GM2A`. Empty if none. The short version of `off_target_loci` for exon hits specifically. |
+| `hervk_family_hits` | Off-target hits landing in another annotated HERV-K/HML-2 (RepeatMasker ERVK) locus. This is the *desired* signal for a pan-HERV-K-family probe — more is better. |
+| `exon_hits` | Off-target hits landing in an exon of an unrelated gene. Real cross-hybridization risk — this is what `off_target_risk` and probe ranking are most sensitive to. |
+| `intron_hits` | Off-target hits landing in an intron of an unrelated gene. Low risk, tolerated. |
+| `outside_gene_hits` | Off-target hits landing outside any annotated gene entirely (intergenic). Low risk, tolerated. |
+| `off_target_loci` | The full audit trail: every individual off-target hit, one entry per hit, as `<accession>:<start>-<end> (<feature>)` — e.g. `NC_000005.10:151268868-151268889 (exon of GM2A)`. Feature is always one of `HERV-K family: <element>`, `exon of <gene>`, `intron of <gene>`, or `outside any gene`. |
+
+Probes are ranked (`rank`) by: fewest `exon_hits` first, then most
+`hervk_family_hits`, then fewest `intron_hits` + `outside_gene_hits`
+combined, then eFISHent's own `quality` score as a final tiebreaker.
+
+#### Columns from eFISHent (passed through unchanged)
+
+These come straight from your input CSVs — ProbeK doesn't recompute or
+alter them. Brief descriptions below; see
+[eFISHent's own documentation](https://github.com/BBQuercus/eFISHent) for
+authoritative definitions, particularly for `kmers`/`count`, which are
+inputs to eFISHent's own transcriptome-level off-target scoring that ProbeK
+doesn't otherwise use.
+
+| Column | Meaning |
+|---|---|
+| `name` | Probe identifier, e.g. `pNRV101_gag-17`. |
+| `sequence` | The probe's nucleotide sequence — what ProbeK actually BLASTs. |
+| `length` | Probe length in bases. |
+| `start` / `end` | Probe position within eFISHent's target transcript. |
+| `GC` | GC content (%). |
+| `TM` | Predicted melting temperature. |
+| `deltaG` | Predicted free energy (secondary structure/duplex stability). |
+| `kmers` / `count` | Inputs to eFISHent's own k-mer-based off-target scoring. |
+| `cpg_fraction` | Fraction of the probe that is CpG dinucleotides. |
+| `low_complexity` | Sequence-complexity score (low-complexity/repetitive content). |
+| `accessibility` | Predicted accessibility of the target region (secondary structure). |
+| `on_target_dg` | Predicted on-target binding free energy. |
+| `txome_off_targets` | Count of *transcriptome*-level off-targets eFISHent found (separate from, and not recomputed by, ProbeK's genomic classification). |
+| `off_target_genes` | Ensembl transcript IDs eFISHent flagged from the transcriptome screen — informational context only. |
+| `worst_match` | eFISHent's worst observed off-target alignment, formatted `<identity%>/<length>bp/<mismatches>mm`. |
+| `expression_risk` | eFISHent's expression-level risk assessment. |
+| `quality` | eFISHent's composite quality score — higher is better. Used as ProbeK's final ranking tiebreaker. |
+| `recommendation` | eFISHent's own categorical flag: blank/OK, `FLAG(...)`, or `FAIL`. Rows already marked `FAIL` are dropped before ProbeK does anything (see [What it does](#what-it-does)). |
 
 <details>
 <summary><strong>Manual setup (for development, or if you'd rather manage the Python environment yourself)</strong></summary>
