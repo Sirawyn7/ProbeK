@@ -63,7 +63,7 @@ def run(config: AppConfig) -> int:
     input_path = Path(config.input_dir)
     build = config.genome_build
 
-    blast.check_blast_tools()
+    blast.ensure_blast_tools(reference_dir, non_interactive=config.non_interactive)
     reference_data.check_reference_data(reference_dir, build, non_interactive=config.non_interactive)
     if not check_input_dir(input_path, explicit=config.input_was_explicit):
         return 0

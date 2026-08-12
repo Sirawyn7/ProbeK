@@ -32,15 +32,9 @@ candidates accordingly.
 
 - WSL2 (Ubuntu) or native Linux.
 - Python 3.10+.
-- BLAST+ command-line tools (`blastn`, `makeblastdb`, `update_blastdb.pl`):
-  ```
-  sudo apt install ncbi-blast+
-  ```
-  or, if you use conda:
-  ```
-  conda install -c bioconda blast
-  ```
 - No NCBI account, API key, or Entrez email needed — BLAST runs entirely locally.
+
+You do **not** need to install BLAST+ yourself — see below.
 
 ## Setup
 
@@ -49,23 +43,28 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .[dev]
 # optional, for faster interval-overlap classification — ProbeK falls back to
-# a built-in pandas/numpy implementation automatically if neither is available
-# for your Python version (e.g. on very new Python releases without prebuilt
-# wheels yet, this may need `sudo apt install python<ver>-dev` first to build
-# from source):
+# a built-in pandas/numpy implementation automatically if this isn't available
+# on your system:
 pip install -e .[pyranges]    # or: pip install -e .[pyranges1]
 ```
 
-On first run, ProbeK checks `./reference_data/` for three pieces of reference
-data and prompts (y/n) before downloading anything:
+On first run, ProbeK checks for everything else it needs and offers to set it
+up for you, prompting (y/n) before downloading anything — nothing happens
+silently:
 
-1. NCBI's preformatted `human_genome` BLAST database (~1 GB, GRCh38.p14).
-2. The matching RefSeq gene annotation (GFF3).
-3. The UCSC RepeatMasker track, filtered to the ERVK family, plus the NCBI
+1. **BLAST+ command-line tools** (`blastn`, `makeblastdb`, `update_blastdb.pl`).
+   If these aren't already on your system, ProbeK offers to download NCBI's
+   official prebuilt Linux build straight into the project's
+   `reference_data/tools/` folder — no `sudo`/admin access or package manager
+   needed. (If you'd rather install it system-wide yourself:
+   `sudo apt install ncbi-blast+`, or `conda install -c bioconda blast`.)
+2. **NCBI's preformatted `human_genome` BLAST database** (~1 GB, GRCh38.p14).
+3. **The matching RefSeq gene annotation** (GFF3).
+4. **The UCSC RepeatMasker track**, filtered to the ERVK family, plus the NCBI
    assembly report used to reconcile RefSeq/UCSC chromosome naming.
 
 Use `--non-interactive` in scripted/CI contexts — it fails with the exact
-manual download command instead of prompting.
+manual setup command instead of prompting.
 
 ## Usage
 

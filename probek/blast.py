@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import os
+import re
 import shutil
 import subprocess
+import tarfile
 from pathlib import Path
+
+import requests
 
 from .exceptions import MissingToolError
 from .models import BlastHit
+from .prompts import prompt_yes_no
 
 BLAST_TASK = "blastn-short"
 WORD_SIZE = 7
@@ -33,18 +40,148 @@ BLAST_PARAMS = {
 
 REQUIRED_TOOLS = ["blastn", "makeblastdb", "update_blastdb.pl"]
 
+BLAST_RELEASE_INDEX_URL = "https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/"
 
-def check_blast_tools() -> None:
-    missing = [tool for tool in REQUIRED_TOOLS if shutil.which(tool) is None]
-    if missing:
+_MANUAL_INSTALL_HINT = (
+    "Install manually:\n"
+    "  sudo apt install ncbi-blast+\n"
+    "or (conda/mamba):\n"
+    "  conda install -c bioconda blast"
+)
+
+
+def check_blast_tools() -> list[str]:
+    """Returns the subset of REQUIRED_TOOLS not currently found on PATH."""
+    return [tool for tool in REQUIRED_TOOLS if shutil.which(tool) is None]
+
+
+def _local_bin_dir(reference_dir: Path) -> Path:
+    return Path(reference_dir) / "tools" / "blast+" / "bin"
+
+
+def _tools_present_in(bin_dir: Path) -> bool:
+    return bin_dir.is_dir() and all((bin_dir / tool).exists() for tool in REQUIRED_TOOLS)
+
+
+def _prepend_to_path(bin_dir: Path) -> None:
+    os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+
+
+def _find_latest_linux_tarball_url() -> tuple[str, str]:
+    """Returns (tarball_url, md5_url) for NCBI's latest prebuilt Linux x64 BLAST+ build."""
+    resp = requests.get(BLAST_RELEASE_INDEX_URL, timeout=30)
+    resp.raise_for_status()
+    match = re.search(r'href="(ncbi-blast-[\d.]+\+-x64-linux\.tar\.gz)"', resp.text)
+    if not match:
+        raise MissingToolError(
+            "Could not automatically determine the latest BLAST+ release for "
+            "this platform.\n\n" + _MANUAL_INSTALL_HINT
+        )
+    filename = match.group(1)
+    return BLAST_RELEASE_INDEX_URL + filename, BLAST_RELEASE_INDEX_URL + filename + ".md5"
+
+
+def _verify_md5(path: Path, md5_url: str) -> None:
+    expected = requests.get(md5_url, timeout=30).text.strip().split()[0]
+    actual = hashlib.md5(path.read_bytes()).hexdigest()
+    if actual != expected:
+        raise MissingToolError(
+            f"Downloaded BLAST+ archive failed checksum verification "
+            f"(expected {expected}, got {actual}) — please try again."
+        )
+
+
+def install_blast_plus_locally(reference_dir: Path) -> Path:
+    """Downloads and extracts NCBI's official prebuilt BLAST+ build for Linux
+    x64 into reference_dir/tools/blast+/ — no admin/sudo privileges required.
+    Verifies the download against NCBI's published MD5 checksum. Returns the
+    resulting bin/ directory."""
+    tarball_url, md5_url = _find_latest_linux_tarball_url()
+
+    tools_dir = Path(reference_dir) / "tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    tarball_path = tools_dir / "blast_plus_download.tar.gz"
+
+    print(f"Downloading {tarball_url} ...")
+    with requests.get(tarball_url, stream=True, timeout=60) as resp:
+        resp.raise_for_status()
+        with open(tarball_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=1 << 20):
+                f.write(chunk)
+
+    _verify_md5(tarball_path, md5_url)
+
+    with tarfile.open(tarball_path) as tar:
+        try:
+            tar.extractall(tools_dir, filter="data")
+        except TypeError:
+            tar.extractall(tools_dir)  # Python <3.12 without the `filter` argument
+    tarball_path.unlink()
+
+    extracted_dirs = sorted(
+        d for d in tools_dir.iterdir() if d.is_dir() and d.name.startswith("ncbi-blast-")
+    )
+    if not extracted_dirs:
+        raise MissingToolError(
+            "BLAST+ download completed but the expected directory was not found "
+            f"under {tools_dir}.\n\n" + _MANUAL_INSTALL_HINT
+        )
+
+    target_dir = _local_bin_dir(reference_dir).parent
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+    extracted_dirs[-1].rename(target_dir)
+
+    bin_dir = target_dir / "bin"
+    if not _tools_present_in(bin_dir):
+        raise MissingToolError(
+            f"BLAST+ was installed to {target_dir} but the expected tools were "
+            f"not found in its bin/ directory.\n\n" + _MANUAL_INSTALL_HINT
+        )
+    return bin_dir
+
+
+def ensure_blast_tools(reference_dir: Path, non_interactive: bool = False) -> None:
+    """Ensures blastn/makeblastdb/update_blastdb.pl are available on PATH for
+    this process, with minimal manual setup:
+
+    1. If already on PATH (system install via apt/conda/etc.), use that.
+    2. Else, if previously auto-installed under reference_dir/tools/blast+/,
+       reuse it (just prepend to PATH for this process).
+    3. Else, offer to download NCBI's official prebuilt Linux build locally —
+       no admin/sudo privileges required — and use that.
+
+    In --non-interactive mode, a missing install is a hard failure with both
+    the local-install pointer and the manual system-install commands.
+    """
+    if not check_blast_tools():
+        return
+
+    local_bin = _local_bin_dir(reference_dir)
+    if _tools_present_in(local_bin):
+        _prepend_to_path(local_bin)
+        return
+
+    if non_interactive:
         raise MissingToolError(
             "Missing required BLAST+ tool(s): "
-            + ", ".join(missing)
-            + "\n\nInstall with either:\n"
-            "  sudo apt install ncbi-blast+\n"
-            "or (conda/mamba):\n"
-            "  conda install -c bioconda blast"
+            + ", ".join(check_blast_tools())
+            + "\n\nRun without --non-interactive to have ProbeK install these "
+            "automatically (no admin/sudo required), or " + _MANUAL_INSTALL_HINT
         )
+
+    print(
+        "\nBLAST+ command-line tools (blastn, makeblastdb, update_blastdb.pl) were not found."
+    )
+    if prompt_yes_no(
+        f"Download and install them automatically now to {local_bin.parent}? "
+        "(official NCBI build, no admin/sudo required)"
+    ):
+        bin_dir = install_blast_plus_locally(reference_dir)
+        _prepend_to_path(bin_dir)
+        return
+
+    raise MissingToolError("BLAST+ is required to continue.\n\n" + _MANUAL_INSTALL_HINT)
 
 
 def blastn_version() -> str:

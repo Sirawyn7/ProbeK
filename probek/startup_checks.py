@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .blast import check_blast_tools
 from .exceptions import InputDataError
 
 logger = logging.getLogger(__name__)
@@ -39,4 +38,4 @@ def check_input_dir(input_path: Path, explicit: bool) -> bool:
     return True
 
 
-__all__ = ["check_blast_tools", "check_input_dir", "DEFAULT_INPUT_DIR"]
+__all__ = ["check_input_dir", "DEFAULT_INPUT_DIR"]

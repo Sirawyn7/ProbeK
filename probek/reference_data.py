@@ -19,6 +19,7 @@ import requests
 
 from .config import GenomeBuild
 from .exceptions import ReferenceDataMissingError
+from .prompts import prompt_yes_no
 
 MANIFEST_NAME = "manifest.json"
 
@@ -81,11 +82,6 @@ def rmsk_present(reference_dir: Path) -> bool:
 
 def assembly_report_present(reference_dir: Path, build: GenomeBuild) -> bool:
     return assembly_report_path(reference_dir, build).exists()
-
-
-def _prompt_yes_no(question: str) -> bool:
-    answer = input(f"{question} [y/N]: ").strip().lower()
-    return answer in ("y", "yes")
 
 
 def _download_file(url: str, dest: Path) -> None:
@@ -160,7 +156,7 @@ def check_reference_data(
                 f"Missing reference data: {label}.\nRun manually:\n  {manual_cmd}"
             )
         print(f"\nReference data missing: {label}")
-        if not _prompt_yes_no(f"Download it now to {reference_dir}?"):
+        if not prompt_yes_no(f"Download it now to {reference_dir}?"):
             raise ReferenceDataMissingError(
                 f"Reference data required: {label}.\nRun manually:\n  {manual_cmd}"
             )
