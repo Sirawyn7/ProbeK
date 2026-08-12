@@ -1,0 +1,11 @@
+pandas>=2.0
+numpy>=1.24
+requests>=2.31
+pytest>=7.4
+
+# Optional — attempted at setup time for faster interval-overlap classification.
+# If install fails on your Python version (e.g. missing pythonX.Y-dev headers
+# for the Cython build), ProbeK automatically falls back to a built-in
+# pandas/numpy interval index; nothing else needs to change.
+# pyranges
+# pyranges1

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Claude Code harness internals (not project files)
+.claude/
+
+# ProbeK runtime data (large, regenerable from official NCBI/UCSC sources)
+reference_data/
+results/
+
+# Sequence/BLAST cache — regenerable from reference_data + input CSVs; entries
+# are tied to a specific reference_db_version fingerprint that a fresh clone
+# won't have anyway, so there's no value in versioning it.
+probek_cache.sqlite3
+
+# User-dropped probe data — working files, not meant for version control
+input_csvs/*.csv
+!input_csvs/README.md
