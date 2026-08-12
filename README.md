@@ -2,7 +2,7 @@
 
 Genomic off-target ranking for HERV-K (HML-2) FISH probe candidates.
 
-[eFISHent](https://github.com/moldia/eFISHent) screens candidate smFISH
+[eFISHent](https://github.com/BBQuercus/eFISHent) screens candidate smFISH
 probes against the human *transcriptome*, but says nothing about *genomic*
 off-targets. HERV-K/HML-2 is a ~90-copy repetitive family, so almost every
 probe hits dozens of other HERV-K loci genome-wide — that's expected and
@@ -58,8 +58,14 @@ silently:
    `reference_data/tools/` folder — no `sudo`/admin access or package manager
    needed. (If you'd rather install it system-wide yourself:
    `sudo apt install ncbi-blast+`, or `conda install -c bioconda blast`.)
-2. **NCBI's preformatted `human_genome` BLAST database** (~1 GB, GRCh38.p14).
-3. **The matching RefSeq gene annotation** (GFF3).
+2. **NCBI's preformatted `human_genome` BLAST database** (~1 GB, GRCh38). Note:
+   this is NCBI's own rolling alias for "the current human genome build," so
+   its exact patch level can lag behind the GRCh38.p14 (GCF_000001405.40)
+   pinned for the annotation below — as of writing it resolves to GRCh38.p13
+   (GCF_000001405.39). This doesn't affect correctness: patch releases only
+   add alternate/patch scaffolds and never move primary chromosome (chr1-22,
+   X, Y, MT) coordinates, which is what classification actually relies on.
+3. **The matching RefSeq gene annotation** (GFF3, pinned to GRCh38.p14 / GCF_000001405.40).
 4. **The UCSC RepeatMasker track**, filtered to the ERVK family, plus the NCBI
    assembly report used to reconcile RefSeq/UCSC chromosome naming.
 
@@ -86,8 +92,8 @@ files and exits cleanly.
 | `--input` | `./input_csvs/` | Directory or file of eFISHent CSVs |
 | `--output` | `./results/` | Output directory |
 | `--top-n` | `12` | Candidates to select per target |
-| `--min-identity` | `90` | Minimum %% identity for a genuine BLAST hit |
-| `--min-coverage` | `90` | Minimum %% query coverage for a genuine BLAST hit |
+| `--min-identity` | `90` | Minimum % identity for a genuine BLAST hit |
+| `--min-coverage` | `90` | Minimum % query coverage for a genuine BLAST hit |
 | `--reference-dir` | `./reference_data/` | Reference data location |
 | `--build` | `GRCh38` | Genome build |
 | `--non-interactive` | off | Never prompt; fail clearly if reference data is missing |
