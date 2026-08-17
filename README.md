@@ -36,7 +36,14 @@ candidates accordingly.
 
 ## Quick start
 
-1. Extract or clone this folder anywhere.
+1. Clone this folder anywhere:
+   ```bash
+   git clone https://github.com/Sirawyn7/ProbeK.git
+   ```
+   (You can also grab it via GitHub's "Download ZIP" button instead, but a
+   `git clone` is what lets [`bash update.sh`](#updating) pull in future
+   updates later. See [Updating](#updating) below if you start from a ZIP
+   and want to switch.)
 2. Drop your eFISHent-format CSVs into [`input_csvs/`](input_csvs/) (see that directory's README for the expected format and how target labels are derived).
 3. Run:
    ```bash
@@ -69,6 +76,25 @@ prompt. If `input_csvs/` is empty, ProbeK just prints a reminder of where to
 put your files and exits cleanly.
 
 Pass flags the same way: `bash run.sh --top-n 15`.
+
+## Updating
+
+```bash
+bash update.sh
+```
+
+Checks GitHub for a newer version, and if one exists, asks
+`Update now? [y/N]:` before doing anything. On yes, it pulls the latest code
+and reinstalls dependencies if they changed. It never touches your
+`input_csvs/`, `reference_data/`, or `results/` — those aren't tracked by
+git, so they're untouched by a pull either way.
+
+This needs the folder to have been set up via `git clone` (see
+[Quick start](#quick-start)) rather than a ZIP download. If you started from
+a ZIP, `bash update.sh` will detect that and print steps to switch to a git
+clone — in short: `git clone` a fresh copy elsewhere, then copy your
+`input_csvs/*.csv` and `reference_data/` folder into it so you don't have to
+re-download the ~1 GB+ reference data.
 
 ### Flags
 
