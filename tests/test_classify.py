@@ -1,6 +1,6 @@
 import pytest
 
-from probek.classify import classify_hits, tier_counts
+from probek.classify import classify_hits, feature_counts
 from probek.interval_backend import IntervalFeature, build_index
 from probek.models import BlastHit
 
@@ -90,14 +90,19 @@ def test_reverse_strand_hit_classified_via_normalized_span(indexes):
     assert classified.tier == "A"
 
 
-def test_tier_counts_tally(indexes):
+def test_feature_counts_tallies_all_four_buckets(indexes):
     hits = [
-        _hit("NC_1", 1600, 1700),  # A
-        _hit("NC_1", 5050, 5060),  # C
-        _hit("NC_1", 8100, 8200),  # B
+        _hit("NC_1", 1600, 1700),  # HERV-K family
+        _hit("NC_1", 5050, 5060),  # exon
+        _hit("NC_1", 8100, 8200),  # intron
+        _hit("NC_1", 20000, 20010),  # outside any gene
     ]
     classified = classify_hits(hits, *indexes)
-    assert tier_counts(classified) == {"A": 1, "B": 1, "C": 1}
+    assert feature_counts(classified) == {"hervk": 1, "exon": 1, "intron": 1, "outside_gene": 1}
+
+
+def test_feature_counts_empty():
+    assert feature_counts([]) == {"hervk": 0, "exon": 0, "intron": 0, "outside_gene": 0}
 
 
 def test_classify_hits_empty_list(indexes):

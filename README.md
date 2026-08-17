@@ -22,10 +22,10 @@ candidates accordingly.
 2. **BLAST** — runs `blastn -task blastn-short` for every unique sequence against a local copy of NCBI's `human_genome` database, batched into one call. Shows a live elapsed-time indicator while it runs — blastn itself reports no percentage, so this is "still working, Xs elapsed" rather than a true progress bar.
 3. **Filter** — discards alignments below a configurable identity/coverage floor (default ≥90%/≥90%).
 4. **Classify** — for each surviving hit, checks interval overlap against RepeatMasker ERVK loci, then exons, then falls back to intron/non-genic:
-   - **Tier A** — HERV-K family locus (counts *in favor* of the probe)
-   - **Tier B** — intron or non-genic (low risk, tolerated)
-   - **Tier C** — exon of an unrelated gene (real off-target risk)
-5. **Rank & select** — sorts by fewest Tier C, then most Tier A, then fewest Tier B, then eFISHent's `quality` score as a tiebreaker, and selects the top N (default 12) per target. (Tier A/B/C is internal ranking vocabulary only — the actual output spells out "HERV-K family" / "exon" / "intron" / "outside any gene" in plain English; see [Output](#output).)
+   - **HERV-K family locus** — desired signal, more of this is fine
+   - **Intron or non-genic** — low risk, tolerated
+   - **Exon of an unrelated gene** — real off-target risk; any probe with at least one of these is excluded from normal ranking (see below)
+5. **Rank & select** — any probe with one or more off-target hits landing in an exon of an unrelated gene is excluded from normal selection (a real cross-hybridization risk, not something to rank around). Among the rest, probes are ranked by eFISHent's `quality` score (higher is better); ties are broken by HERV-K-family hit count (fewer is better — a probe cross-reacting with fewer other HERV-K/HML-2 loci is more specific to its own locus), and remaining ties by intron-hit count (fewer is better). Hits landing entirely outside any gene are informational only and never affect ranking. The top N (default 12) per target are selected this way; if a target doesn't have enough exon-hit-free candidates to fill that quota, the shortfall is backfilled from the excluded pool (least-bad — fewest exon hits — first, then the same tiebreak chain), and this is logged so it's never silent. See [Output](#output) for how to spot a backfilled selection.
 6. **Output** — per-target audit CSVs, a combined final-selection table, and vendor-ready FASTA files.
 
 ## Requirements
@@ -139,18 +139,27 @@ original eFISHent columns and the full off-target detail trail behind. See
 | `target` | Which gene target this probe belongs to (e.g. `pNRV101_gag`). Only in `final_selection.csv` — each per-target audit CSV is already just one target. |
 | `selected` | Whether this probe is one of the chosen top-N for its target. |
 | `rank` | This probe's rank within its target, 1 = best. See sort order below. |
-| `target_short` | `True` if this target had fewer than `--top-n` non-FAIL candidates to begin with (so every candidate was selected, none backfilled). Only in `final_selection.csv`. |
-| `off_target_risk` | At-a-glance category — `Low` / `Moderate` / `High` — based purely on `exon_hits`, the only off-target category that represents real cross-hybridization risk: 0 → Low, 1–2 → Moderate, 3+ → High. |
+| `target_short` | `True` if this target had fewer than `--top-n` non-FAIL candidates *in total* (counting exon-hit candidates too) — meaning every available candidate was selected. This is independent of whether any selected probe was backfilled from the excluded (exon-hit) pool — check `exon_hits > 0` on a `selected` row for that; both conditions are logged separately when they happen. Only in `final_selection.csv`. |
+| `off_target_risk` | At-a-glance category — `Low` / `Moderate` / `High` — based purely on `exon_hits`, the only off-target category that represents real cross-hybridization risk: 0 → Low, 1–2 → Moderate, 3+ → High. Any row above `Low` is normally excluded from selection; it only appears as `selected` if it was backfilled (see [Rank & select](#what-it-does)). |
 | `flagged_genes` | Comma-separated gene symbols that had a real (exon) off-target hit, e.g. `GM2A`. Empty if none. The short version of `off_target_loci` for exon hits specifically. |
-| `hervk_family_hits` | Off-target hits landing in another annotated HERV-K/HML-2 (RepeatMasker ERVK) locus. This is the *desired* signal for a pan-HERV-K-family probe — more is better. |
-| `exon_hits` | Off-target hits landing in an exon of an unrelated gene. Real cross-hybridization risk — this is what `off_target_risk` and probe ranking are most sensitive to. |
-| `intron_hits` | Off-target hits landing in an intron of an unrelated gene. Low risk, tolerated. |
-| `outside_gene_hits` | Off-target hits landing outside any annotated gene entirely (intergenic). Low risk, tolerated. |
+| `hervk_family_hits` | Off-target hits landing in another annotated HERV-K/HML-2 (RepeatMasker ERVK) locus. This is the *desired* signal for a pan-HERV-K-family probe. It's also this ranking's tiebreaker when two probes have the exact same `quality` — fewer wins, since a probe cross-reacting with fewer other HERV-K/HML-2 loci is more specific to its own locus. |
+| `exon_hits` | Off-target hits landing in an exon of an unrelated gene. Real cross-hybridization risk — any probe with `exon_hits > 0` is excluded from normal ranking/selection. It's only selected as a logged fallback if a target doesn't have enough exon-hit-free candidates to fill `--top-n` otherwise. |
+| `intron_hits` | Off-target hits landing in an intron of an unrelated gene. Low risk, tolerated. Also this ranking's final tiebreaker, engaged only when `quality` and `hervk_family_hits` are both exactly tied — fewer wins. |
+| `outside_gene_hits` | Off-target hits landing outside any annotated gene entirely (intergenic). Low risk, tolerated, and ignored entirely for ranking purposes. |
 | `off_target_loci` | The full audit trail: every individual off-target hit, one entry per hit, as `<accession>:<start>-<end> (<feature>)` — e.g. `NC_000005.10:151268868-151268889 (exon of GM2A)`. Feature is always one of `HERV-K family: <element>`, `exon of <gene>`, `intron of <gene>`, or `outside any gene`. |
 
-Probes are ranked (`rank`) by: fewest `exon_hits` first, then most
-`hervk_family_hits`, then fewest `intron_hits` + `outside_gene_hits`
-combined, then eFISHent's own `quality` score as a final tiebreaker.
+Probes are ranked (`rank`) by eFISHent's `quality` score (descending), tied
+by `hervk_family_hits` (ascending — fewer is better), tied by `intron_hits`
+(ascending). `outside_gene_hits` never affects rank. Any probe with
+`exon_hits > 0` is excluded from this ranking and only appears in the top-N
+selection as a logged fallback if the target has too few exon-hit-free
+candidates to fill `--top-n` otherwise.
+
+Two different things can make a target's selection less than ideal, and
+they're logged separately: `target_short` means there weren't enough
+candidates *in total*; a backfill warning means there were enough
+candidates, just not enough *exon-hit-free* ones. A target can hit either,
+both, or neither.
 
 #### Columns from eFISHent (passed through unchanged)
 

@@ -55,8 +55,15 @@ def classify_hits(
     return results
 
 
-def tier_counts(classified: list[ClassifiedHit]) -> dict[str, int]:
-    counts = {"A": 0, "B": 0, "C": 0}
+def feature_counts(classified: list[ClassifiedHit]) -> dict[str, int]:
+    counts = {"hervk": 0, "exon": 0, "intron": 0, "outside_gene": 0}
     for c in classified:
-        counts[c.tier] += 1
+        if c.tier == "A":
+            counts["hervk"] += 1
+        elif c.tier == "C":
+            counts["exon"] += 1
+        elif c.locus_label:
+            counts["intron"] += 1
+        else:
+            counts["outside_gene"] += 1
     return counts

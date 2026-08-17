@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .classify import feature_counts
 from .io_utils import write_fasta
 from .models import ClassifiedHit, TargetResult
 
@@ -30,20 +31,6 @@ def format_off_target_loci(classified: list[ClassifiedHit]) -> str:
         start, end = c.hit.span
         parts.append(f"{c.hit.sseqid}:{start}-{end} ({_plain_feature_label(c)})")
     return "; ".join(parts)
-
-
-def feature_counts(classified: list[ClassifiedHit]) -> dict[str, int]:
-    counts = {"hervk": 0, "exon": 0, "intron": 0, "outside_gene": 0}
-    for c in classified:
-        if c.tier == "A":
-            counts["hervk"] += 1
-        elif c.tier == "C":
-            counts["exon"] += 1
-        elif c.locus_label:
-            counts["intron"] += 1
-        else:
-            counts["outside_gene"] += 1
-    return counts
 
 
 def flagged_genes(classified: list[ClassifiedHit]) -> str:
@@ -73,12 +60,12 @@ def off_target_risk_label(exon_hits: int) -> str:
 def enrich_target_result(
     result: TargetResult, classified_by_sequence: dict[str, list[ClassifiedHit]]
 ) -> None:
-    """Replaces each row's internal Tier A/B/C sort-key counts (used only for
-    ranking, in probek.scoring's vocabulary) with plain-English off-target
-    detail: a per-locus feature+location breakdown, separate HERV-K family /
-    exon / intron / outside-gene hit counts, an at-a-glance risk category,
-    and the specific genes flagged for real (exon) off-target risk. Mutates
-    `result` in place so both the per-target audit CSV and the combined
+    """Replaces each row's internal sort-key counts (used only for ranking,
+    in probek.scoring's vocabulary) with plain-English off-target detail: a
+    per-locus feature+location breakdown, separate HERV-K family / exon /
+    intron / outside-gene hit counts, an at-a-glance risk category, and the
+    specific genes flagged for real (exon) off-target risk. Mutates `result`
+    in place so both the per-target audit CSV and the combined
     final-selection CSV pick up the same enriched columns."""
     for row in result.ranked_rows:
         seq = str(row["sequence"]).upper()
@@ -91,7 +78,7 @@ def enrich_target_result(
         row["outside_gene_hits"] = counts["outside_gene"]
         row["off_target_risk"] = off_target_risk_label(counts["exon"])
         row["flagged_genes"] = flagged_genes(classified)
-        for internal_key in ("tier_a_count", "tier_b_count", "tier_c_count"):
+        for internal_key in ("_hervk_count", "_exon_count", "_intron_count"):
             row.pop(internal_key, None)
         row["selected"] = row["name"] in result.selected_names
 
@@ -102,18 +89,18 @@ def enrich_target_result(
 _PRIORITY_COLUMNS = [
     "target",
     "name",
+    "sequence",
     "selected",
     "rank",
     "target_short",
     "off_target_risk",
     "flagged_genes",
-    "hervk_family_hits",
     "exon_hits",
     "intron_hits",
+    "hervk_family_hits",
     "outside_gene_hits",
     "quality",
     "recommendation",
-    "sequence",
 ]
 
 
@@ -138,18 +125,33 @@ def write_target_audit_csv(result: TargetResult, output_dir: Path) -> Path:
 def write_final_selection_csv(results: list[TargetResult], output_dir: Path) -> Path:
     rows = []
     for result in results:
+        target_rows = []
         for r in result.ranked_rows:
             if r["name"] in result.selected_names:
                 row = dict(r)
                 row["target"] = result.target
                 row["target_short"] = result.short
-                rows.append(row)
+                target_rows.append(row)
+        rows.extend(target_rows)
+
         if result.short:
             logger.warning(
                 "Target '%s' has only %d non-FAIL candidate(s) (< requested top-N); "
                 "all were selected.",
                 result.target,
                 len(result.selected_names),
+            )
+
+        # `short` (not enough candidates at all) and this (enough candidates,
+        # but not enough off-target-clean ones) are independent conditions --
+        # a target can trigger either, both, or neither.
+        backfilled = sum(1 for row in target_rows if row.get("exon_hits", 0) > 0)
+        if backfilled:
+            logger.warning(
+                "Target '%s' didn't have enough off-target-clean candidates; "
+                "%d selection(s) include a real (exon) off-target hit.",
+                result.target,
+                backfilled,
             )
 
     df = _reorder_columns(pd.DataFrame(rows))

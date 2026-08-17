@@ -1,13 +1,15 @@
+import logging
+
 import pandas as pd
 
 from probek.models import BlastHit, ClassifiedHit, TargetResult
 from probek.report import (
     _reorder_columns,
     enrich_target_result,
-    feature_counts,
     flagged_genes,
     format_off_target_loci,
     off_target_risk_label,
+    write_final_selection_csv,
 )
 
 _DUMMY_HIT = BlastHit(
@@ -42,32 +44,16 @@ def test_format_off_target_loci_empty():
     assert format_off_target_loci([]) == ""
 
 
-def test_feature_counts_tallies_all_four_buckets():
-    classified = [
-        ClassifiedHit(hit=_DUMMY_HIT, tier="A", locus_label="HERVK-int"),
-        ClassifiedHit(hit=_DUMMY_HIT, tier="A", locus_label="LTR5_Hs"),
-        ClassifiedHit(hit=_DUMMY_HIT, tier="C", locus_label="GM2A"),
-        ClassifiedHit(hit=_DUMMY_HIT, tier="B", locus_label="ARMC3"),
-        ClassifiedHit(hit=_DUMMY_HIT, tier="B", locus_label=None),
-        ClassifiedHit(hit=_DUMMY_HIT, tier="B", locus_label=None),
-    ]
-    assert feature_counts(classified) == {"hervk": 2, "exon": 1, "intron": 1, "outside_gene": 2}
-
-
-def test_feature_counts_empty():
-    assert feature_counts([]) == {"hervk": 0, "exon": 0, "intron": 0, "outside_gene": 0}
-
-
-def test_enrich_target_result_replaces_tier_counts_with_plain_columns():
+def test_enrich_target_result_replaces_internal_sort_counts_with_plain_columns():
     result = TargetResult(
         target="t1",
         ranked_rows=[
             {
                 "name": "p1",
                 "sequence": "acgt",
-                "tier_a_count": 3,
-                "tier_b_count": 1,
-                "tier_c_count": 0,
+                "_hervk_count": 3,
+                "_intron_count": 1,
+                "_exon_count": 0,
             }
         ],
         selected_names={"p1"},
@@ -84,9 +70,9 @@ def test_enrich_target_result_replaces_tier_counts_with_plain_columns():
     enrich_target_result(result, classified_by_sequence)
 
     row = result.ranked_rows[0]
-    assert "tier_a_count" not in row
-    assert "tier_b_count" not in row
-    assert "tier_c_count" not in row
+    assert "_hervk_count" not in row
+    assert "_intron_count" not in row
+    assert "_exon_count" not in row
     assert row["hervk_family_hits"] == 3
     assert row["exon_hits"] == 0
     assert row["intron_hits"] == 0
@@ -154,7 +140,7 @@ def test_reorder_columns_puts_priority_columns_first_and_loci_last():
     columns = list(reordered.columns)
     assert columns[-1] == "off_target_loci"
     assert columns.index("name") < columns.index("length")
-    assert columns.index("selected") < columns.index("sequence")
+    assert columns.index("name") < columns.index("sequence") < columns.index("selected")
     assert columns.index("off_target_risk") < columns.index("quality")
 
 
@@ -163,3 +149,31 @@ def test_reorder_columns_handles_missing_priority_columns_gracefully():
     df = pd.DataFrame([{"name": "p1", "off_target_loci": "x", "length": 21}])
     reordered = _reorder_columns(df)
     assert list(reordered.columns) == ["name", "length", "off_target_loci"]
+
+
+def test_write_final_selection_csv_warns_on_backfilled_exon_hit_rows(tmp_path, caplog):
+    # p1 is a clean pick; p2 was backfilled despite having a real (exon) off-target.
+    result = TargetResult(
+        target="t1",
+        ranked_rows=[
+            {"name": "p1", "sequence": "AAAA", "quality": 50.0, "exon_hits": 0, "rank": 1},
+            {"name": "p2", "sequence": "CCCC", "quality": 40.0, "exon_hits": 2, "rank": 2},
+        ],
+        selected_names={"p1", "p2"},
+        short=False,
+    )
+    with caplog.at_level(logging.WARNING):
+        write_final_selection_csv([result], tmp_path)
+    assert any("real (exon) off-target hit" in message for message in caplog.messages)
+
+
+def test_write_final_selection_csv_silent_when_no_backfill(tmp_path, caplog):
+    result = TargetResult(
+        target="t1",
+        ranked_rows=[{"name": "p1", "sequence": "AAAA", "quality": 50.0, "exon_hits": 0, "rank": 1}],
+        selected_names={"p1"},
+        short=False,
+    )
+    with caplog.at_level(logging.WARNING):
+        write_final_selection_csv([result], tmp_path)
+    assert caplog.messages == []
